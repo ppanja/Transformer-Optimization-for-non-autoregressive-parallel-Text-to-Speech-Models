@@ -56,11 +56,17 @@ c) Build Monotonic Alignment Search Code (Cython): `cd monotonic_align; python s
 Replace task mentioned in (a) above with below steps.
 
 a.1) Download and extract the [CMU Arctic dataset,cmu_us_slt_arctic.tar.bz2](http://festvox.org/cmu_arctic/).
+
 a.2) Install sox in windows / Linux system.
+
 a.3) Convert the sample rate of audio files from 16 KHz to 22 KHz using sox.
+
 a.4) Trim the silences from both end of the audio file using sox. 
+
 a.5) Split the files into train, validation and test files.
+
 a.6) Create a DUMMY folder within the project folder "glow-tts" where audio files needto be kept.
+
 a.7) Create three file lists same as the file lists present for baseline model which containthe lists of files for train, validation and test files in the format - "DUMMY/arc-tic_b0408.wav|You have all the advantage."
 
 ## 3. Training Example
