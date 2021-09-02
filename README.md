@@ -32,7 +32,7 @@ a.5) Split the files into train, validation and test files.
 
 a.6) Create a DUMMY folder within the project folder "glow-tts" where audio files needto be kept.
 
-a.7) Create three file lists same as the file lists present for baseline model which containthe lists of files for train, validation and test files in the format - "DUMMY/arc-tic_b0408.wav|You have all the advantage."
+a.7) Create three file lists same as the file lists present for baseline model which containthe lists of files for train, validation and test files in the format - "DUMMY/arctic_b0408.wav|You have all the advantage."
 
 b) Initialize WaveGlow submodule: `git submodule init; git submodule update`
 
