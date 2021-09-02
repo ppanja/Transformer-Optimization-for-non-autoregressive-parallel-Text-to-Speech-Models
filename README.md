@@ -1,6 +1,6 @@
 # Transformer Optimization for non-autoregressive parallel Text to Speech Models
 
-This code is a replication of [official Glow TTS code](https://github.com/jaywalnut310/glow-tts) with some changes required for the experiments and implementation of novel approach for finding importance weights. If you want to use Glow TTS model, I recommend that you refer to the official code.
+This code has used [official Glow TTS code](https://github.com/jaywalnut310/glow-tts) as baseline model for MSc Thesis. Some changes has been done for the experiments and implementation of novel approach for finding importance weights. If you want to use Glow TTS model, I recommend that you refer to the official code.
 
 
 ## 1. Environments used
