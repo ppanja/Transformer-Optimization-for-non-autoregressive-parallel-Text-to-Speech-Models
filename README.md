@@ -47,6 +47,17 @@ sh train_ddi.sh configs/base.json base
 
 ## 4. Experiment Results
 
+Download pre-trained files from below location and keep in the corresponding folders of "glow-tts/logs/":
+
+glow-tts/logs/base_50_all_head: ## pre-trained file with all heads after 50 epochs
+https://drive.google.com/file/d/167YUngqzn1PLfK0PDktgjSqjJutPjAnt/view?usp=sharing
+
+glow-tts/logs/base_final_graph_20: ## pre-trained file with all heads after 20 epochs - Provide index of heads with respect to importance weights in descending order
+https://drive.google.com/file/d/118T9lYBSxUf7k9arYw22oqBulemnsfJB/view?usp=sharing
+
+glow-tts/logs/base_final_opti: ## pre-trained file with pruned heads after 50 epochs
+https://drive.google.com/file/d/12WP5pQe68bu6rl5a2z7tdvPNhRGxQHGE/view?usp=sharing
+
 See [ExperimentResults.ipynb](./ExperimentResults.ipynb)
 
 
