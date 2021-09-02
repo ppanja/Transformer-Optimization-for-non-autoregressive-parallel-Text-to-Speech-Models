@@ -11,24 +11,35 @@ from modules import LayerNorm
    
 
 class Encoder(nn.Module):
-  def __init__(self, hidden_channels, filter_channels, n_heads, n_layers, kernel_size=1, p_dropout=0., window_size=None, block_length=None, **kwargs):
+  def __init__(self, hidden_channels, filter_channels, n_heads, mask_heads, mask_flag, n_layers, kernel_size=1, p_dropout=0., window_size=None, block_length=None, **kwargs):
     super().__init__()
     self.hidden_channels = hidden_channels
     self.filter_channels = filter_channels
     self.n_heads = n_heads
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    self.mask_heads = mask_heads
+    self.mask_flag = mask_flag
+    
     self.n_layers = n_layers
     self.kernel_size = kernel_size
     self.p_dropout = p_dropout
     self.window_size = window_size
     self.block_length = block_length
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    self.l_head_wt = np.empty([4, 8], dtype=float)
+    self.l_qry_wt = np.empty([4, 8], dtype=float)
+    self.l_attn_wt = np.empty([4, 8], dtype=float)
 
     self.drop = nn.Dropout(p_dropout)
     self.attn_layers = nn.ModuleList()
     self.norm_layers_1 = nn.ModuleList()
     self.ffn_layers = nn.ModuleList()
     self.norm_layers_2 = nn.ModuleList()
+    #self.l_head_wt = torch.tensor
     for i in range(self.n_layers):
-      self.attn_layers.append(MultiHeadAttention(hidden_channels, hidden_channels, n_heads, window_size=window_size, p_dropout=p_dropout, block_length=block_length))
+      self.attn_layers.append(MultiHeadAttention(hidden_channels, hidden_channels, n_heads, mask_heads, mask_flag, layer=i, window_size=window_size, p_dropout=p_dropout, block_length=block_length))
       self.norm_layers_1.append(LayerNorm(hidden_channels))
       self.ffn_layers.append(FFN(hidden_channels, hidden_channels, filter_channels, kernel_size, p_dropout=p_dropout))
       self.norm_layers_2.append(LayerNorm(hidden_channels))
@@ -37,15 +48,21 @@ class Encoder(nn.Module):
     attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
     for i in range(self.n_layers):
       x = x * x_mask
-      y = self.attn_layers[i](x, x, attn_mask)
+      
+      ## Modified as part of MSc Thesis - Transformer optimization
+      y, head_wt, qry_wt, attn_wt = self.attn_layers[i](x, x, attn_mask)
+      
       y = self.drop(y)
       x = self.norm_layers_1[i](x + y)
 
       y = self.ffn_layers[i](x, x_mask)
       y = self.drop(y)
       x = self.norm_layers_2[i](x + y)
+      self.l_head_wt[i] = head_wt
+      self.l_qry_wt[i] = qry_wt
+      self.l_attn_wt[i] = attn_wt
     x = x * x_mask
-    return x
+    return x, self.l_head_wt, self.l_qry_wt, self.l_attn_wt
 
 
 class CouplingBlock(nn.Module):
@@ -104,19 +121,27 @@ class CouplingBlock(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-  def __init__(self, channels, out_channels, n_heads, window_size=None, heads_share=True, p_dropout=0., block_length=None, proximal_bias=False, proximal_init=False):
+  def __init__(self, channels, out_channels, n_heads, mask_heads, mask_flag, layer=None, window_size=None, heads_share=False, p_dropout=0., block_length=None, proximal_bias=False, proximal_init=False):
     super().__init__()
     assert channels % n_heads == 0
 
     self.channels = channels
     self.out_channels = out_channels
     self.n_heads = n_heads
+    self.mask_heads = mask_heads
+    self.mask_flag = mask_flag
+    self.layer = layer
     self.window_size = window_size
     self.heads_share = heads_share
     self.block_length = block_length
     self.proximal_bias = proximal_bias
     self.p_dropout = p_dropout
     self.attn = None
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    self.head_wt = np.empty([1, 8], dtype=float)
+    self.qry_wt = np.empty([1, 8], dtype=float)
+    self.attn_wt = np.empty([1, 8], dtype=float)
 
     self.k_channels = channels // n_heads
     self.conv_q = nn.Conv1d(channels, channels, 1)
@@ -141,18 +166,43 @@ class MultiHeadAttention(nn.Module):
     q = self.conv_q(x)
     k = self.conv_k(c)
     v = self.conv_v(c)
+    #print("q shape: ",q.size())
+    x, self.attn = self.attention(q, k, v, self.mask_heads, mask=attn_mask)
     
-    x, self.attn = self.attention(q, k, v, mask=attn_mask)
-
     x = self.conv_o(x)
-    return x
+    return x, self.head_wt, self.qry_wt, self.attn_wt
+  
+  ## Added as part of MSc Thesis - Transformer optimization
+  def prune_head(self,mask_heads,enc_layer):
+      num_heads = self.n_heads
+      head_mask = torch.ones(num_heads)
+
+      for head_idx in mask_heads[enc_layer]:
+          head_mask[head_idx] = 0
+      return head_mask.view(1, num_heads, 1, 1).cuda()
     
-  def attention(self, query, key, value, mask=None):
+  def attention(self, query, key, value, mask_heads, mask=None):
     # reshape [b, d, t] -> [b, n_h, t, d_k]
+    
     b, d, t_s, t_t = (*key.size(), query.size(2))
+    enc_layer = self.layer
+    # print("Key Size: ",key.size())
+    # print("qry Size: ",query.size())
+    #print("b,d,t_s,t_t: ",b,d,t_s,t_t)
     query = query.view(b, self.n_heads, self.k_channels, t_t).transpose(2, 3)
+
+    #print("query shape: ",query.shape)
     key = key.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
+    
+    #print("key shape: ",key.shape)
     value = value.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    if self.mask_flag == 'Y':
+        query = query * self.prune_head(mask_heads,enc_layer)
+        #print("query: ",query)
+        key = key * self.prune_head(mask_heads,enc_layer)
+        value = value * self.prune_head(mask_heads,enc_layer)
 
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.k_channels)
     if self.window_size is not None:
@@ -177,7 +227,25 @@ class MultiHeadAttention(nn.Module):
       relative_weights = self._absolute_position_to_relative_position(p_attn)
       value_relative_embeddings = self._get_relative_embeddings(self.emb_rel_v, t_s)
       output = output + self._matmul_with_relative_values(relative_weights, value_relative_embeddings)
+
+    ## Added as part of MSc Thesis - Transformer optimization
+    tmp_head_wt = output #p_attn #
+    tmp_qry_wt = query
+    tmp_attn_wt = p_attn
+    for i in range(0,self.n_heads):
+        tmp_head = tmp_head_wt[:, i, :, :]
+        tmp_head = torch.norm(tmp_head.contiguous().view(1, -1), p=2, dim = 1).detach() 
+        self.head_wt[0][i] = tmp_head ** 2
+    for i in range(0,self.n_heads):
+        tmp_qry = tmp_qry_wt[:, i, :, :]
+        tmp_qry = torch.norm(tmp_qry.contiguous().view(1, -1), p=2, dim = 1).detach() 
+        self.qry_wt[0][i] = tmp_qry ** 2
+    for i in range(0,self.n_heads):
+        tmp_attn = tmp_attn_wt[:, i, :, :]
+        tmp_attn = torch.norm(tmp_attn.contiguous().view(1, -1), p=2, dim = 1).detach() 
+        self.attn_wt[0][i] = tmp_attn ** 2
     output = output.transpose(2, 3).contiguous().view(b, d, t_t) # [b, n_h, t_t, d_k] -> [b, d, t_t]
+
     return output, p_attn
 
   def _matmul_with_relative_values(self, x, y):

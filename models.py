@@ -2,6 +2,7 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
+import numpy as np
 
 import modules
 import commons
@@ -17,7 +18,6 @@ class DurationPredictor(nn.Module):
     self.filter_channels = filter_channels
     self.kernel_size = kernel_size
     self.p_dropout = p_dropout
-
     self.drop = nn.Dropout(p_dropout)
     self.conv_1 = nn.Conv1d(in_channels, filter_channels, kernel_size, padding=kernel_size//2)
     self.norm_1 = attentions.LayerNorm(filter_channels)
@@ -45,7 +45,10 @@ class TextEncoder(nn.Module):
       hidden_channels, 
       filter_channels, 
       filter_channels_dp, 
-      n_heads, 
+      n_heads,
+      mask_heads,
+      mask_flag,
+      #mas,
       n_layers, 
       kernel_size, 
       p_dropout, 
@@ -63,6 +66,11 @@ class TextEncoder(nn.Module):
     self.filter_channels = filter_channels
     self.filter_channels_dp = filter_channels_dp
     self.n_heads = n_heads
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    self.mask_heads = mask_heads
+    self.mask_flag = mask_flag
+
     self.n_layers = n_layers
     self.kernel_size = kernel_size
     self.p_dropout = p_dropout
@@ -71,6 +79,11 @@ class TextEncoder(nn.Module):
     self.mean_only = mean_only
     self.prenet = prenet
     self.gin_channels = gin_channels
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    self.l_head_wt = np.empty([4, 8], dtype=float)
+    self.l_qry_wt = np.empty([4, 8], dtype=float)
+    self.l_attn_wt = np.empty([4, 8], dtype=float)
 
     self.emb = nn.Embedding(n_vocab, hidden_channels)
     nn.init.normal_(self.emb.weight, 0.0, hidden_channels**-0.5)
@@ -81,26 +94,34 @@ class TextEncoder(nn.Module):
       hidden_channels,
       filter_channels,
       n_heads,
+      mask_heads,
+      mask_flag,
       n_layers,
       kernel_size,
       p_dropout,
       window_size=window_size,
-      block_length=block_length,
+      block_length=block_length
     )
 
     self.proj_m = nn.Conv1d(hidden_channels, out_channels, 1)
     if not mean_only:
       self.proj_s = nn.Conv1d(hidden_channels, out_channels, 1)
     self.proj_w = DurationPredictor(hidden_channels + gin_channels, filter_channels_dp, kernel_size, p_dropout)
+    
   
   def forward(self, x, x_lengths, g=None):
+    #print("x before: ",x.size())
+    #print("x lengths: ",x_lengths)
     x = self.emb(x) * math.sqrt(self.hidden_channels) # [b, t, h]
+    #print("x: ",x.size())
     x = torch.transpose(x, 1, -1) # [b, h, t]
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
 
     if self.prenet:
       x = self.pre(x, x_mask)
-    x = self.encoder(x, x_mask)
+    
+    ## Modified as part of MSc Thesis - Transformer optimization
+    x, self.l_head_wt, self.l_qry_wt, self.l_attn_wt = self.encoder(x, x_mask)
 
     if g is not None:
       g_exp = g.expand(-1, -1, x.size(-1))
@@ -115,7 +136,7 @@ class TextEncoder(nn.Module):
       x_logs = torch.zeros_like(x_m)
 
     logw = self.proj_w(x_dp, x_mask)
-    return x_m, x_logs, logw, x_mask
+    return x_m, x_logs, logw, x_mask, self.l_head_wt, self.l_qry_wt, self.l_attn_wt
 
 
 class FlowSpecDecoder(nn.Module):
@@ -194,6 +215,11 @@ class FlowGenerator(nn.Module):
       out_channels,
       kernel_size=3, 
       n_heads=2, 
+      
+      ## Added as part of MSc Thesis - Transformer optimization
+      mask_heads=[0,1,2,3,4,5,6,7],
+      mask_flag='N',
+
       n_layers_enc=6,
       p_dropout=0., 
       n_blocks_dec=12, 
@@ -222,6 +248,11 @@ class FlowGenerator(nn.Module):
     self.out_channels = out_channels
     self.kernel_size = kernel_size
     self.n_heads = n_heads
+    
+    ## Added as part of MSc Thesis - Transformer optimization
+    self.mask_heads = mask_heads
+    self.mask_flag = mask_flag
+
     self.n_layers_enc = n_layers_enc
     self.p_dropout = p_dropout
     self.n_blocks_dec = n_blocks_dec
@@ -247,7 +278,12 @@ class FlowGenerator(nn.Module):
         hidden_channels_enc or hidden_channels, 
         filter_channels, 
         filter_channels_dp, 
-        n_heads, 
+        n_heads,
+        
+        ## Added as part of MSc Thesis - Transformer optimization
+        mask_heads,
+        mask_flag,
+
         n_layers_enc, 
         kernel_size, 
         p_dropout, 
@@ -277,7 +313,9 @@ class FlowGenerator(nn.Module):
   def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, gen=False, noise_scale=1., length_scale=1.):
     if g is not None:
       g = F.normalize(self.emb_g(g)).unsqueeze(-1) # [b, h]
-    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, g=g)
+    
+    ## Modified as part of MSc Thesis - Transformer optimization
+    x_m, x_logs, logw, x_mask, l_head_wt, l_qry_wt, l_attn_wt = self.encoder(x, x_lengths, g=g)
 
     if gen:
       w = torch.exp(logw) * x_mask * length_scale
@@ -298,7 +336,7 @@ class FlowGenerator(nn.Module):
 
       z = (z_m + torch.exp(z_logs) * torch.randn_like(z_m) * noise_scale) * z_mask
       y, logdet = self.decoder(z, z_mask, g=g, reverse=True)
-      return (y, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_)
+      return (y, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask, l_head_wt, l_qry_wt, l_attn_wt), (attn, logw, logw_)
     else:
       z, logdet = self.decoder(y, z_mask, g=g, reverse=False)
       with torch.no_grad():
@@ -313,7 +351,7 @@ class FlowGenerator(nn.Module):
       z_m = torch.matmul(attn.squeeze(1).transpose(1, 2), x_m.transpose(1, 2)).transpose(1, 2) # [b, t', t], [b, t, d] -> [b, d, t']
       z_logs = torch.matmul(attn.squeeze(1).transpose(1, 2), x_logs.transpose(1, 2)).transpose(1, 2) # [b, t', t], [b, t, d] -> [b, d, t']
       logw_ = torch.log(1e-8 + torch.sum(attn, -1)) * x_mask
-      return (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_)
+      return (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask, l_head_wt, l_qry_wt, l_attn_wt), (attn, logw, logw_)
 
   def preprocess(self, y, y_lengths, y_max_length):
     if y_max_length is not None:
