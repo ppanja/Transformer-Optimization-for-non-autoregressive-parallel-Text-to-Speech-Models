@@ -17,7 +17,6 @@ For Mixed-precision training, we use [apex](https://github.com/NVIDIA/apex); com
 
 ## 2. Pre-requisites
 
-### Change related to MSc Thesis ###
 Replace task mentioned in (a) above with below steps.
 
 a.1) Download and extract the [CMU Arctic dataset,cmu_us_slt_arctic.tar.bz2](http://festvox.org/cmu_arctic/).
