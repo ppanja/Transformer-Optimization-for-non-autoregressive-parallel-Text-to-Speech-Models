@@ -17,21 +17,21 @@ For Mixed-precision training, we use [apex](https://github.com/NVIDIA/apex); com
 
 ## 2. Pre-requisites
 
-Replace task mentioned in (a) above with below steps.
+a.1) Change the name of the repository from "transformer-optimization" to "glow-tts".
 
-a.1) Download and extract the [CMU Arctic dataset,cmu_us_slt_arctic.tar.bz2](http://festvox.org/cmu_arctic/).
+a.2) Download and extract the [CMU Arctic dataset,cmu_us_slt_arctic.tar.bz2](http://festvox.org/cmu_arctic/).
 
-a.2) Install sox in windows / Linux system.
+a.3) Install sox in windows / Linux system.
 
-a.3) Convert the sample rate of audio files from 16 KHz to 22 KHz using sox.
+a.4) Convert the sample rate of audio files from 16 KHz to 22 KHz using sox.
 
-a.4) Trim the silences from both end of the audio file using sox. 
+a.5) Trim the silences from both end of the audio file using sox. 
 
-a.5) Split the files into train, validation and test files.
+a.6) Split the files into train, validation and test files.
 
-a.6) Create a DUMMY folder within the project folder "glow-tts" where audio files needto be kept.
+a.7) Create a DUMMY folder within the project folder "glow-tts" where audio files needto be kept.
 
-a.7) Create three file lists same as the file lists present for baseline model which containthe lists of files for train, validation and test files in the format - "DUMMY/arctic_b0408.wav|You have all the advantage."
+a.8) Create three file lists same as the file lists present for baseline model which containthe lists of files for train, validation and test files in the format - "DUMMY/arctic_b0408.wav|You have all the advantage."
 
 b) Initialize WaveGlow submodule: `git submodule init; git submodule update`
 
