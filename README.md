@@ -53,5 +53,5 @@ See [inference.ipynb](./inference.ipynb)
 
 ## Acknowledgements
 
-Our implementation is hugely influenced by the following repos:
+This implementation has used the following repo as baseline model:
 * [Glow-TTS](https://github.com/jaywalnut310/glow-tts)
