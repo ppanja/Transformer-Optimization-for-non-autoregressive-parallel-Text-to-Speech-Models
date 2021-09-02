@@ -46,9 +46,9 @@ c) Build Monotonic Alignment Search Code (Cython): `cd monotonic_align; python s
 sh train_ddi.sh configs/base.json base
 ```
 
-## 4. Inference Example
+## 4. Experiment Results
 
-See [inference.ipynb](./inference.ipynb)
+See [ExperimentResults.ipynb](./ExperimentResults.ipynb)
 
 
 ## Acknowledgements
